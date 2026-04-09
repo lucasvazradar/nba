@@ -182,67 +182,70 @@ function parseMarkets(markets: any[]): OddsData {
  * Os mercados já vêm embutidos no evento — sem chamada extra por jogo.
  */
 export async function getAllNovibetOdds(): Promise<Map<string, OddsData>> {
-  const url = `${LISTING_URL}?${qParams()}`
-  console.log(`[Novibet] Fetching: ${url.slice(0, 100)}`)
+  const ts = Date.now()
+  const url = `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/6051394/?lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
+  console.log(`[Novibet] Fetching odds...`)
 
-  let raw: unknown
+  let pages: any[]
   try {
-    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' } as RequestInit)
+    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' })
     if (!res.ok) {
       console.warn(`[Novibet] HTTP ${res.status}`)
       return new Map()
     }
     const text = await res.text()
-    if (!text.trim().startsWith('[') && !text.trim().startsWith('{')) {
-      console.warn(`[Novibet] Non-JSON response`)
-      return new Map()
-    }
-    raw = JSON.parse(text)
+    console.log(`[Novibet] Response: ${res.status}, ${text.length} bytes`)
+    const parsed = JSON.parse(text)
+    pages = Array.isArray(parsed) ? parsed : [parsed]
   } catch (e) {
     console.error(`[Novibet] Fetch error: ${e}`)
     return new Map()
   }
 
-  const pages = Array.isArray(raw) ? raw : [raw]
   const map = new Map<string, OddsData>()
+  console.log(`[Novibet] Pages: ${pages.length}`)
 
-  for (const page of pages as any[]) {
-    for (const bv of (page?.betViews ?? [])) {
-      const ctx: string = (bv?.competitionContextCaption ?? '').toUpperCase()
-      if (!ctx.includes('BASQUET') && !ctx.includes('BASKET')) continue
+  for (const page of pages) {
+    const betViews = page?.betViews ?? []
+    console.log(`[Novibet] betViews count: ${betViews.length}`)
+
+    for (const bv of betViews) {
+      const ctx: string = bv?.competitionContextCaption ?? ''
+      const ctxUp = ctx.toUpperCase()
+      console.log(`[Novibet] betView: "${ctx}" isBasket=${ctxUp.includes('BASQUET') || ctxUp.includes('BASKET')}`)
+
+      if (!ctxUp.includes('BASQUET') && !ctxUp.includes('BASKET')) continue
 
       for (const comp of (bv?.competitions ?? [])) {
-        const compName: string = (comp?.caption ?? '').toUpperCase()
-        if (!compName.includes('NBA')) continue
+        const compName: string = comp?.caption ?? ''
+        const isNBA = compName.toUpperCase().includes('NBA')
+        console.log(`[Novibet] competition: "${compName}" isNBA=${isNBA} events=${comp?.events?.length ?? 0}`)
+        if (!isNBA) continue
 
         for (const ev of (comp?.events ?? [])) {
           const id: number = ev.betContextId
           const ac = ev.additionalCaptions
           if (!id || !ac) continue
 
-          const awayAbbr = captionToAbbr(ac.competitor1 ?? '')
-          const homeAbbr = captionToAbbr(ac.competitor2 ?? '')
+          const c1: string = ac.competitor1 ?? ''
+          const c2: string = ac.competitor2 ?? ''
+          const awayAbbr = captionToAbbr(c1)
+          const homeAbbr = captionToAbbr(c2)
+          console.log(`[Novibet] Event ${id}: "${c1}" vs "${c2}" → away=${awayAbbr} home=${homeAbbr}`)
 
-          if (!awayAbbr || !homeAbbr) {
-            console.warn(`[Novibet] Sem abreviação: "${ac.competitor1}" vs "${ac.competitor2}"`)
-            continue
-          }
+          if (!awayAbbr || !homeAbbr) continue
 
           const odds = parseMarkets(ev.markets ?? [])
           odds._bookmaker = 'novibet_direct'
-
           const key = `${awayAbbr}-${homeAbbr}`
           map.set(key, odds)
-
-          console.log(
-            `[Novibet] ${key} (${id}) — total: ${odds.total ? `${odds.total.line} over=${odds.total.over} under=${odds.total.under}` : 'NONE'}`
-          )
+          console.log(`[Novibet] ${key} — total: ${odds.total ? `${odds.total.line} over=${odds.total.over}` : 'NONE'}`)
         }
       }
     }
   }
 
-  console.log(`[Novibet] Total jogos NBA encontrados: ${map.size}`)
+  console.log(`[Novibet] Resultado final: ${map.size} jogos NBA`)
   return map
 }
 
@@ -251,31 +254,11 @@ export async function getAllNovibetOdds(): Promise<Map<string, OddsData>> {
  * Usado apenas pela rota /api/novibet para diagnóstico.
  */
 export async function getNovibetEventMap(): Promise<Map<string, number>> {
-  const url = `${LISTING_URL}?${qParams()}`
+  const oddsMap = await getAllNovibetOdds()
+  // getNovibetEventMap não é mais necessário separado — extraímos do mesmo fetch
+  // Retorna um mapa vazio de IDs (IDs não são necessários para a análise)
   const map = new Map<string, number>()
-
-  try {
-    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' } as RequestInit)
-    if (!res.ok) return map
-    const raw = await res.json()
-    const pages = Array.isArray(raw) ? raw : [raw]
-
-    for (const page of pages as any[]) {
-      for (const bv of (page?.betViews ?? [])) {
-        const ctx: string = (bv?.competitionContextCaption ?? '').toUpperCase()
-        if (!ctx.includes('BASQUET') && !ctx.includes('BASKET')) continue
-        for (const comp of (bv?.competitions ?? [])) {
-          if (!(comp?.caption ?? '').toUpperCase().includes('NBA')) continue
-          for (const ev of (comp?.events ?? [])) {
-            const awayAbbr = captionToAbbr(ev.additionalCaptions?.competitor1 ?? '')
-            const homeAbbr = captionToAbbr(ev.additionalCaptions?.competitor2 ?? '')
-            if (awayAbbr && homeAbbr) map.set(`${awayAbbr}-${homeAbbr}`, ev.betContextId)
-          }
-        }
-      }
-    }
-  } catch { /* silently fail */ }
-
+  for (const key of Array.from(oddsMap.keys())) map.set(key, 0)
   return map
 }
 
