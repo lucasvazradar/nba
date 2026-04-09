@@ -156,10 +156,10 @@ async function fetchJSON<T>(url: string): Promise<T | null> {
  * Returns a map of "AWAY-HOME" → novibet eventId.
  */
 export async function getNovibetEventMap(): Promise<Map<string, number>> {
-  // Try NBA competition ID first, then fall back to popular page
+  // Popular page (6051394) tem todos esportes mas inclui NBA — NBA ID direto (6680136) retorna vazio
   const urls = [
-    `${NOVIBET_BASE}/spt/feed/marketviews/location/v2/${NBA_CATEGORY_PATH}/${NBA_COMPETITION_ID}/?${qParams()}`,
     `${NOVIBET_BASE}/spt/feed/marketviews/location/v2/${NBA_CATEGORY_PATH}/${POPULAR_PAGE_ID}/?${qParams()}`,
+    `${NOVIBET_BASE}/spt/feed/marketviews/location/v2/${NBA_CATEGORY_PATH}/${NBA_COMPETITION_ID}/?${qParams()}`,
   ]
 
   let events: NovibetEvent[] = []
@@ -200,66 +200,61 @@ export async function getNovibetEventMap(): Promise<Map<string, number>> {
 }
 
 /**
- * Recursively walks any JSON structure collecting objects that look like events:
- * { eventId: number, caption: string, ... }
- * This handles any nesting depth Novibet may use (betViews, items, events, etc.)
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function collectEvents(node: unknown, found: NovibetEvent[] = []): NovibetEvent[] {
-  if (!node || typeof node !== 'object') return found
-
-  if (Array.isArray(node)) {
-    for (const item of node) collectEvents(item, found)
-    return found
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const obj = node as Record<string, any>
-
-  // It's an event if it has eventId (number) and caption (string)
-  if (typeof obj.eventId === 'number' && typeof obj.caption === 'string') {
-    found.push(obj as NovibetEvent)
-    // Don't recurse deeper — markets are fetched separately
-    return found
-  }
-
-  // Otherwise recurse into every array/object value
-  for (const val of Object.values(obj)) {
-    if (val && typeof val === 'object') collectEvents(val, found)
-  }
-
-  return found
-}
-
-/**
- * Extracts events from any response shape Novibet may return.
+ * Extracts NBA events from Novibet's response structure:
+ * raw[] → betViews[] (filtered by competitionContextCaption ≈ "Basquetebol")
+ *       → competitions[] → events[]
  */
 function extractEvents(raw: unknown): NovibetEvent[] {
-  const all = collectEvents(raw)
-
-  // Filter to basketball events only (caption contains NBA team names or "NBA")
-  // Exclude events where caption looks like football (e.g. "Palmeiras", "Flamengo")
-  const basketballKeywords = [
-    ...Object.values(ABBR_TO_NOVIBET).flat().map(s => s.toUpperCase()),
-    'NBA', 'BASKETBALL', 'BASQUETE', 'RAPTORS', 'HEAT', 'CELTICS', 'LAKERS',
-    'WARRIORS', 'BULLS', 'KNICKS', 'NETS', 'HAWKS', 'HORNETS', 'CAVALIERS',
-    'MAVERICKS', 'NUGGETS', 'PISTONS', 'ROCKETS', 'PACERS', 'CLIPPERS',
-    'GRIZZLIES', 'BUCKS', 'TIMBERWOLVES', 'PELICANS', 'THUNDER', 'MAGIC',
-    'SIXERS', 'SUNS', 'BLAZERS', 'KINGS', 'SPURS', 'JAZZ', 'WIZARDS',
-  ]
-
-  const nbaEvents = all.filter((ev) => {
-    const cap = ev.caption.toUpperCase()
-    return basketballKeywords.some((k) => cap.includes(k))
-  })
-
-  console.log(`[Novibet] extractEvents: total=${all.length} nba=${nbaEvents.length}`)
-  if (all.length > 0 && nbaEvents.length === 0) {
-    // Log first few captions to help diagnose
-    console.log('[Novibet] Sample captions:', all.slice(0, 5).map(e => e.caption).join(' | '))
+  if (!Array.isArray(raw)) {
+    console.warn('[Novibet] Expected array at root, got:', typeof raw)
+    return []
   }
 
-  return nbaEvents
+  const BASKETBALL_LABELS = ['BASQUETE', 'BASKETBALL', 'NBA', 'EUA']
+
+  const events: NovibetEvent[] = []
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const page of raw as any[]) {
+    const betViews = page?.betViews
+    if (!Array.isArray(betViews)) continue
+
+    for (const bv of betViews) {
+      const ctx: string = (bv?.competitionContextCaption ?? '').toUpperCase()
+      const isBasketball = BASKETBALL_LABELS.some((k) => ctx.includes(k))
+      if (!isBasketball) continue
+
+      console.log(`[Novibet] Basketball betView found: "${bv.competitionContextCaption}"`)
+
+      const competitions = bv?.competitions
+      if (!Array.isArray(competitions)) continue
+
+      for (const comp of competitions) {
+        const compCaption: string = comp?.caption ?? ''
+        // Only NBA competitions
+        if (!compCaption.toUpperCase().includes('NBA') && !compCaption.toUpperCase().includes('EUA')) {
+          console.log(`[Novibet] Skipping competition: "${compCaption}"`)
+          continue
+        }
+
+        const evs = comp?.events
+        if (!Array.isArray(evs)) continue
+
+        for (const ev of evs) {
+          if (typeof ev.eventId === 'number' && typeof ev.caption === 'string') {
+            events.push(ev as NovibetEvent)
+          }
+        }
+      }
+    }
+  }
+
+  console.log(`[Novibet] extractEvents: found ${events.length} NBA events`)
+  if (events.length > 0) {
+    console.log('[Novibet] Events:', events.map(e => `${e.eventId}:"${e.caption}"`).join(' | '))
+  }
+
+  return events
 }
 
 // ─── Market fetching for a specific event ────────────────────────────────────
