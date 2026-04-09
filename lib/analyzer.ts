@@ -13,6 +13,7 @@ import type {
 } from '@/types'
 import { getLast10Games, getInjuries, getPlayerProjections, getPlayerStatsByDate } from './sportsdata'
 import { getAllOddsByMatchup, estimateOddsFromHistory, ODD_MIN, ODD_MAX } from './oddsapi'
+import { getAllNovibetOdds } from './novibet'
 import { claudeAnalyze } from './claude'
 
 // ─── Risk Filters ─────────────────────────────────────────────────────────────
@@ -344,7 +345,7 @@ function removeContradictions(opportunities: BetOpportunity[]): BetOpportunity[]
  * 5. Sort by EV desc
  */
 function postProcess(opportunities: BetOpportunity[], bookmakerSource?: string | null): BetOpportunity[] {
-  const isProxy = bookmakerSource && bookmakerSource !== 'novibet'
+  const isProxy = bookmakerSource && bookmakerSource !== 'novibet' && bookmakerSource !== 'novibet_direct'
 
   // 1. Compute / update EV + flag proxy odds
   const withEV = opportunities.map((o) => ({
@@ -385,7 +386,19 @@ export async function analyzeGame(
   const injuries = sharedData?.injuries ?? await getInjuries()
   const projections = sharedData?.projections ?? await getPlayerProjections(game.game_date)
   const allPlayerStats = sharedData?.allPlayerStats ?? await getPlayerStatsByDate(game.game_date)
-  const oddsMap = sharedData?.oddsMap ?? await getAllOddsByMatchup(true)
+
+  let oddsMap: Map<string, OddsData>
+  if (sharedData?.oddsMap) {
+    oddsMap = sharedData.oddsMap
+  } else {
+    // Standalone call: fetch Novibet direct + Odds API fallback
+    const [novibetOdds, oddsApiMap] = await Promise.all([
+      getAllNovibetOdds(),
+      getAllOddsByMatchup(true),
+    ])
+    oddsMap = new Map<string, OddsData>(oddsApiMap)
+    for (const [key, o] of Array.from(novibetOdds)) oddsMap.set(key, o)
+  }
 
   const [homeHistory, awayHistory] = await Promise.all([
     getLast10Games(game.home_team_id),
@@ -486,13 +499,24 @@ export async function analyzeGame(
 // ─── Analisa todos os jogos do dia (compartilhando dados) ─────────────────────
 
 export async function analyzeAllGames(games: NBAGame[]): Promise<BetOpportunity[]> {
+  const gameDate = games[0]?.game_date ?? new Date().toISOString().split('T')[0]
+
   // Busca dados compartilhados uma única vez para todos os jogos
-  const [injuries, projections, allPlayerStats, oddsMap] = await Promise.all([
+  const [injuries, projections, allPlayerStats, novibetOdds, oddsApiMap] = await Promise.all([
     getInjuries(),
-    getPlayerProjections(games[0]?.game_date ?? new Date().toISOString().split('T')[0]),
-    getPlayerStatsByDate(games[0]?.game_date ?? new Date().toISOString().split('T')[0]),
-    getAllOddsByMatchup(true), // fresh=true: sem cache, odds em tempo real
+    getPlayerProjections(gameDate),
+    getPlayerStatsByDate(gameDate),
+    getAllNovibetOdds(),           // Novibet direto — fonte primária
+    getAllOddsByMatchup(true),     // The Odds API — fallback
   ])
+
+  console.log(`[analyzer] Novibet direct: ${novibetOdds.size} games | Odds API: ${oddsApiMap.size} games`)
+
+  // Merge: Novibet direct takes priority over The Odds API
+  const oddsMap = new Map<string, OddsData>(oddsApiMap)
+  for (const [key, odds] of Array.from(novibetOdds)) {
+    oddsMap.set(key, odds)  // overwrite any Odds API entry with real Novibet data
+  }
 
   const sharedData = { injuries, projections, allPlayerStats, oddsMap }
 
