@@ -153,7 +153,7 @@ async function fetchJSON<T>(url: string): Promise<T | null> {
  * Returns a map of "AWAY-HOME" → novibet eventId.
  */
 export async function getNovibetEventMap(): Promise<Map<string, number>> {
-  const url = `${NOVIBET_BASE}/spt/feed/marketviews/event/${NBA_COMPETITION_ID}?${qParams()}`
+  const url = `${NOVIBET_BASE}/spt/feed/marketviews/location/v2/${NBA_CATEGORY_PATH}/${NBA_COMPETITION_ID}/?${qParams()}`
   console.log(`[Novibet] Fetching NBA events: ${url.slice(0, 120)}`)
 
   // The competition endpoint may return an array of events OR a single object with nested events

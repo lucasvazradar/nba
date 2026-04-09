@@ -35,7 +35,7 @@ export async function GET() {
   // 2. Novibet direct — check competition listing endpoint
   try {
     const ts = Date.now()
-    const novibetUrl = `https://www.novibet.bet.br/spt/feed/marketviews/event/6051394?lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
+    const novibetUrl = `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/6051394/?lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
     const r = await fetch(novibetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
