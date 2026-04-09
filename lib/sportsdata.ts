@@ -36,11 +36,18 @@ function mapGame(raw: any): NBAGame {
     away_team_id: raw.AwayTeamID,
     game_date: raw.Day?.split('T')[0] ?? '',
     game_time: raw.DateTime
-      ? new Date(raw.DateTime).toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: 'America/Sao_Paulo',
-        })
+      ? (() => {
+          // SportsDataIO returns Eastern Time (ET) without timezone indicator.
+          // April = EDT (UTC-4). Append offset so JS parses correctly before converting to BRT.
+          const etString = raw.DateTime.includes('Z') || raw.DateTime.includes('+')
+            ? raw.DateTime
+            : raw.DateTime + '-04:00'
+          return new Date(etString).toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'America/Sao_Paulo',
+          })
+        })()
       : undefined,
     status:
       raw.Status === 'Final'

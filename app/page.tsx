@@ -65,6 +65,21 @@ const RISK_FLAG_INFO: Record<string, { label: string; description: string }> = {
     description:
       'A Novibet (via The Odds API) não está oferecendo odds para este jogo no momento. As odds foram calculadas internamente a partir do histórico dos times. A margem real da bookmaker pode ser diferente — aposte apenas se as odds aparecerem no site.',
   },
+  odds_via_draftkings: {
+    label: '⚠ Odd via DraftKings (não é Novibet)',
+    description:
+      'A Novibet não está disponível na API de odds para este jogo. A odd exibida é da DraftKings (mercado americano) e pode ser DIFERENTE da odd real na Novibet Brasil. SEMPRE verifique a odd atual no site da Novibet antes de apostar. Use este valor apenas como referência de mercado.',
+  },
+  odds_via_pinnacle: {
+    label: '⚠ Odd via Pinnacle (não é Novibet)',
+    description:
+      'A Novibet não está disponível na API de odds para este jogo. A odd exibida é da Pinnacle (mercado europeu, sharp money) e pode diferir da Novibet Brasil. Pinnacle tende a ter odds mais justas que a média — use como referência mas verifique na Novibet antes de apostar.',
+  },
+  odds_via_fanduel: {
+    label: '⚠ Odd via FanDuel (não é Novibet)',
+    description:
+      'A Novibet não está disponível na API de odds para este jogo. A odd exibida é da FanDuel (mercado americano) e pode ser diferente da Novibet Brasil. SEMPRE confira a odd atual no site da Novibet antes de apostar.',
+  },
   lesao_key_player: {
     label: 'Lesão de jogador-chave',
     description:

@@ -341,11 +341,17 @@ function removeContradictions(opportunities: BetOpportunity[]): BetOpportunity[]
  * 4. Require EV > 0
  * 5. Sort by EV desc
  */
-function postProcess(opportunities: BetOpportunity[]): BetOpportunity[] {
-  // 1. Compute / update EV
+function postProcess(opportunities: BetOpportunity[], bookmakerSource?: string | null): BetOpportunity[] {
+  const isProxy = bookmakerSource && bookmakerSource !== 'novibet'
+
+  // 1. Compute / update EV + flag proxy odds
   const withEV = opportunities.map((o) => ({
     ...o,
     expected_value: parseFloat((o.estimated_probability * o.novibet_odd - 1).toFixed(4)),
+    risk_flags: [
+      ...(o.risk_flags ?? []),
+      ...(isProxy ? [`odds_via_${bookmakerSource}`] : []),
+    ],
   }))
 
   // 2. Filter odd range
@@ -377,7 +383,7 @@ export async function analyzeGame(
   const injuries = sharedData?.injuries ?? await getInjuries()
   const projections = sharedData?.projections ?? await getPlayerProjections(game.game_date)
   const allPlayerStats = sharedData?.allPlayerStats ?? await getPlayerStatsByDate(game.game_date)
-  const oddsMap = sharedData?.oddsMap ?? await getAllOddsByMatchup()
+  const oddsMap = sharedData?.oddsMap ?? await getAllOddsByMatchup(true)
 
   const [homeHistory, awayHistory] = await Promise.all([
     getLast10Games(game.home_team_id),
@@ -447,7 +453,9 @@ export async function analyzeGame(
   )
   const player_metrics = calculatePlayerMetrics(gamePlayerStats, projections, odds.player_props)
 
-  const hasRealOdds = !!oddsMap.get(matchupKey)?.total
+  const realOddsEntry = oddsMap.get(matchupKey)
+  const hasRealOdds = !!realOddsEntry?.total
+  const bookmakerSource = (realOddsEntry as any)?._bookmaker ?? null
   const payload: GameAnalysisPayload = {
     game: { ...game, odds_data: odds },
     home_metrics,
@@ -458,6 +466,7 @@ export async function analyzeGame(
       ...odds,
       alternate_totals: topAlts,
       _estimated: !hasRealOdds,
+      _bookmaker: bookmakerSource,
       _model: { expectedTotal, stdDev },
     } as typeof odds,
   }
@@ -467,7 +476,7 @@ export async function analyzeGame(
   console.log(`[analyzer] ${game.away_team}@${game.home_team} — Claude returned ${raw.length} opportunities`)
 
   // Apply full post-processing pipeline
-  const processed = postProcess(raw)
+  const processed = postProcess(raw, bookmakerSource)
   console.log(`[analyzer] ${game.away_team}@${game.home_team} — after postProcess: ${processed.length} opportunities`)
   return processed
 }
@@ -480,7 +489,7 @@ export async function analyzeAllGames(games: NBAGame[]): Promise<BetOpportunity[
     getInjuries(),
     getPlayerProjections(games[0]?.game_date ?? new Date().toISOString().split('T')[0]),
     getPlayerStatsByDate(games[0]?.game_date ?? new Date().toISOString().split('T')[0]),
-    getAllOddsByMatchup(),
+    getAllOddsByMatchup(true), // fresh=true: sem cache, odds em tempo real
   ])
 
   const sharedData = { injuries, projections, allPlayerStats, oddsMap }
