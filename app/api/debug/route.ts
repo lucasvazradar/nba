@@ -67,14 +67,17 @@ export async function GET() {
 
       results.novibet_betViews = betViewSummary
 
-      // Para cada competition de basquete, listar eventos
+      // Para cada competition de basquete, mostrar chaves e valores do primeiro evento
       for (const page of pages) {
         for (const bv of (page?.betViews ?? [])) {
           const ctx: string = (bv?.competitionContextCaption ?? '').toUpperCase()
           if (!ctx.includes('BASQUET') && !ctx.includes('BASKET') && !ctx.includes('NBA')) continue
           for (const comp of (bv?.competitions ?? [])) {
-            const evts = (comp?.events ?? []).slice(0, 5)
-            results[`events_in_${comp?.caption}`] = evts.map((e: Record<string, unknown>) => `${e.eventId}: ${e.caption}`)
+            const evts = (comp?.events ?? [])
+            if (evts.length > 0) {
+              results[`nba_comp_${comp?.caption}_event0_keys`] = Object.keys(evts[0])
+              results[`nba_comp_${comp?.caption}_event0_raw`] = evts[0]
+            }
           }
         }
       }
