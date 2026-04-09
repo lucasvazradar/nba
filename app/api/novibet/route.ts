@@ -1,60 +1,70 @@
 import { NextResponse } from 'next/server'
-import { getNovibetEventMap, getNovibetMarkets, getAllNovibetOdds } from '@/lib/novibet'
+import { getAllNovibetOdds, getNovibetEventMap } from '@/lib/novibet'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
 
-/**
- * Diagnostic + integration endpoint for Novibet Brazil internal API.
- *
- * GET /api/novibet
- *   → Returns all today's NBA events found on Novibet + parsed odds for each.
- *
- * GET /api/novibet?event_id=44453955
- *   → Returns raw markets for that specific numeric Novibet event ID.
- *
- * GET /api/novibet?matchup=TOR-MIA
- *   → Returns parsed OddsData for that AWAY-HOME matchup key.
- */
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
+  Accept: 'application/json, text/plain, */*',
+  'Accept-Language': 'pt-BR,pt;q=0.9',
+  Origin: 'https://www.novibet.bet.br',
+  Referer: 'https://www.novibet.bet.br/',
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
-  const eventId = searchParams.get('event_id')
-  const matchup = searchParams.get('matchup')
+  const raw = searchParams.get('raw') // ?raw=1 mostra estrutura crua
 
-  // ── Raw market inspection for a specific event ──
-  if (eventId) {
-    const numericId = parseInt(eventId.replace(/^e/, ''), 10)
-    if (isNaN(numericId)) {
-      return NextResponse.json({ error: 'event_id must be numeric (e.g. 44453955)' }, { status: 400 })
+  // ── Modo diagnóstico: mostra o JSON bruto da Novibet passo a passo ──
+  if (raw) {
+    const ts = Date.now()
+    const url = `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/6051394/?lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
+    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' })
+    const text = await res.text()
+    const parsed = JSON.parse(text)
+    const pages = Array.isArray(parsed) ? parsed : [parsed]
+
+    const diag: Record<string, unknown> = {
+      status: res.status,
+      bytes: text.length,
+      pages_count: pages.length,
     }
-    await getNovibetMarkets(numericId)
-    return NextResponse.json({
-      event_id: numericId,
-      note: 'Mercados já vêm embutidos no listing. Use /api/novibet?matchup=TOR-MIA para ver as odds.',
-    })
+
+    for (let pi = 0; pi < pages.length; pi++) {
+      const page = pages[pi]
+      const betViews = page?.betViews ?? []
+      diag[`page${pi}_betViews_count`] = betViews.length
+
+      for (let bi = 0; bi < betViews.length; bi++) {
+        const bv = betViews[bi]
+        const ctx: string = bv?.competitionContextCaption ?? '?'
+        const comps = bv?.competitions ?? []
+        diag[`page${pi}_bv${bi}_ctx`] = ctx
+        diag[`page${pi}_bv${bi}_ctx_upper`] = ctx.toUpperCase()
+        diag[`page${pi}_bv${bi}_isBasket`] = ctx.toUpperCase().includes('BASQUET') || ctx.toUpperCase().includes('BASKET')
+        diag[`page${pi}_bv${bi}_comps`] = comps.map((c: Record<string,unknown>) => c?.caption)
+
+        if (ctx.toUpperCase().includes('BASQUET') || ctx.toUpperCase().includes('BASKET')) {
+          for (const comp of comps) {
+            const cn: string = (comp?.caption ?? '').toUpperCase()
+            const events = comp?.events ?? []
+            diag[`BASKET_comp_${comp?.caption}_events_count`] = events.length
+            diag[`BASKET_comp_${comp?.caption}_isNBA`] = cn.includes('NBA')
+            if (events.length > 0) {
+              diag[`BASKET_comp_${comp?.caption}_ev0_keys`] = Object.keys(events[0])
+              diag[`BASKET_comp_${comp?.caption}_ev0_betContextId`] = events[0].betContextId
+              diag[`BASKET_comp_${comp?.caption}_ev0_additionalCaptions`] = events[0].additionalCaptions
+            }
+          }
+        }
+      }
+    }
+
+    return NextResponse.json(diag)
   }
 
-  // ── Parsed odds for a specific matchup ──
-  if (matchup) {
-    const parts = matchup.toUpperCase().split('-')
-    if (parts.length !== 2) {
-      return NextResponse.json({ error: 'matchup must be AWAY-HOME, e.g. TOR-MIA' }, { status: 400 })
-    }
-    const eventMap = await getNovibetEventMap()
-    const eventIdForMatchup = eventMap.get(matchup.toUpperCase())
-    const allOdds = await getAllNovibetOdds()
-    const oddsForMatchup = allOdds.get(matchup.toUpperCase())
-
-    return NextResponse.json({
-      matchup: matchup.toUpperCase(),
-      event_id: eventIdForMatchup ?? null,
-      event_map_size: eventMap.size,
-      event_map: Object.fromEntries(eventMap),
-      odds: oddsForMatchup ?? null,
-    })
-  }
-
-  // ── Full overview: all NBA events + odds ──
+  // ── Modo normal: odds parseadas ──
   const [eventMap, allOdds] = await Promise.all([
     getNovibetEventMap(),
     getAllNovibetOdds(),
@@ -65,6 +75,5 @@ export async function GET(req: Request) {
     event_map: Object.fromEntries(eventMap),
     odds_fetched: allOdds.size,
     odds: Object.fromEntries(allOdds),
-    tip: 'If events_found=0, the competition endpoint returned an unexpected shape. Check server logs for [Novibet] entries.',
   })
 }
