@@ -41,43 +41,46 @@ export async function GET() {
     Referer: 'https://www.novibet.bet.br/',
   }
 
-  // Testa vários IDs possíveis
-  const novibetIds = [6051394, 6680136, 4795953]
-  for (const id of novibetIds) {
-    try {
-      const ts = Date.now()
-      const url = `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/${id}/?lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
-      const r = await fetch(url, { headers: HEADERS, cache: 'no-store' })
-      const text = await r.text()
-      const key = `novibet_${id}`
-      results[`${key}_status`] = r.status
-      results[`${key}_bytes`] = text.length
-      results[`${key}_preview`] = text.slice(0, 600)
+  // Analisa estrutura do 6051394 (que tem dados)
+  try {
+    const ts = Date.now()
+    const url = `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/6051394/?lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
+    const r = await fetch(url, { headers: HEADERS, cache: 'no-store' })
+    const text = await r.text()
+    results.novibet_status = r.status
+    results.novibet_bytes = text.length
 
-      // Se tiver dados, mostrar as chaves do primeiro elemento
-      if (text.length > 10 && (text.startsWith('[') || text.startsWith('{'))) {
-        try {
-          const parsed = JSON.parse(text)
-          const first = Array.isArray(parsed) ? parsed[0] : parsed
-          if (first && typeof first === 'object') {
-            results[`${key}_top_keys`] = Object.keys(first)
-            // Se tiver betViews, mostrar as chaves do primeiro betView
-            if (Array.isArray(first.betViews) && first.betViews[0]) {
-              results[`${key}_betViews_keys`] = Object.keys(first.betViews[0])
-              const bv0 = first.betViews[0]
-              // Ver se tem items/events dentro do betView
-              for (const k of Object.keys(bv0)) {
-                if (Array.isArray(bv0[k]) && bv0[k].length > 0) {
-                  results[`${key}_betViews[0].${k}[0]_keys`] = Object.keys(bv0[k][0] ?? {})
-                }
-              }
-            }
-          }
-        } catch { /* ignore parse errors */ }
+    if (text.length > 10) {
+      const parsed = JSON.parse(text)
+      const pages = Array.isArray(parsed) ? parsed : [parsed]
+
+      // Listar TODOS os betViews e competitions para entender a estrutura
+      const betViewSummary: Record<string, string[]> = {}
+
+      for (const page of pages) {
+        for (const bv of (page?.betViews ?? [])) {
+          const ctx: string = bv?.competitionContextCaption ?? '(sem caption)'
+          const comps: string[] = (bv?.competitions ?? []).map((c: Record<string, unknown>) => String(c?.caption ?? ''))
+          betViewSummary[ctx] = comps
+        }
       }
-    } catch (e) {
-      results[`novibet_${id}_error`] = String(e)
+
+      results.novibet_betViews = betViewSummary
+
+      // Para cada competition de basquete, listar eventos
+      for (const page of pages) {
+        for (const bv of (page?.betViews ?? [])) {
+          const ctx: string = (bv?.competitionContextCaption ?? '').toUpperCase()
+          if (!ctx.includes('BASQUET') && !ctx.includes('BASKET') && !ctx.includes('NBA')) continue
+          for (const comp of (bv?.competitions ?? [])) {
+            const evts = (comp?.events ?? []).slice(0, 5)
+            results[`events_in_${comp?.caption}`] = evts.map((e: Record<string, unknown>) => `${e.eventId}: ${e.caption}`)
+          }
+        }
+      }
     }
+  } catch (e) {
+    results.novibet_error = String(e)
   }
 
   return NextResponse.json(results)
