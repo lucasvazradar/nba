@@ -15,7 +15,10 @@
 import type { OddsData, AlternateTotalLine } from '@/types'
 
 const NOVIBET_BASE = 'https://www.novibet.bet.br'
-const NBA_COMPETITION_ID = 6051394
+// ID da competição NBA (do browser URL: /popular/4795953/nba/nba/6680136)
+const NBA_COMPETITION_ID = 6680136
+// Fallback: popular page ID (contém todos os esportes misturados)
+const POPULAR_PAGE_ID = 6051394
 // Used in the per-event-market URL: /spt/feed/marketviews/event/4324/{eventId}
 const NBA_CATEGORY_PATH = 4324
 
@@ -153,16 +156,25 @@ async function fetchJSON<T>(url: string): Promise<T | null> {
  * Returns a map of "AWAY-HOME" → novibet eventId.
  */
 export async function getNovibetEventMap(): Promise<Map<string, number>> {
-  const url = `${NOVIBET_BASE}/spt/feed/marketviews/location/v2/${NBA_CATEGORY_PATH}/${NBA_COMPETITION_ID}/?${qParams()}`
-  console.log(`[Novibet] Fetching NBA events: ${url.slice(0, 120)}`)
+  // Try NBA competition ID first, then fall back to popular page
+  const urls = [
+    `${NOVIBET_BASE}/spt/feed/marketviews/location/v2/${NBA_CATEGORY_PATH}/${NBA_COMPETITION_ID}/?${qParams()}`,
+    `${NOVIBET_BASE}/spt/feed/marketviews/location/v2/${NBA_CATEGORY_PATH}/${POPULAR_PAGE_ID}/?${qParams()}`,
+  ]
 
-  // The competition endpoint may return an array of events OR a single object with nested events
-  // We handle both shapes
-  const raw = await fetchJSON<unknown>(url)
-  if (!raw) return new Map()
+  let events: NovibetEvent[] = []
 
-  const events: NovibetEvent[] = extractEvents(raw)
-  console.log(`[Novibet] Found ${events.length} NBA events`)
+  for (const url of urls) {
+    console.log(`[Novibet] Fetching from: ${url.slice(0, 130)}`)
+    const raw = await fetchJSON<unknown>(url)
+    if (!raw) continue
+    events = extractEvents(raw)
+    if (events.length > 0) {
+      console.log(`[Novibet] Found ${events.length} NBA events from ${url.slice(60, 100)}`)
+      break
+    }
+    console.log(`[Novibet] No NBA events from that URL, trying next...`)
+  }
 
   const map = new Map<string, number>()
 
@@ -188,37 +200,66 @@ export async function getNovibetEventMap(): Promise<Map<string, number>> {
 }
 
 /**
- * Extracts events from any response shape Novibet may return.
+ * Recursively walks any JSON structure collecting objects that look like events:
+ * { eventId: number, caption: string, ... }
+ * This handles any nesting depth Novibet may use (betViews, items, events, etc.)
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function collectEvents(node: unknown, found: NovibetEvent[] = []): NovibetEvent[] {
+  if (!node || typeof node !== 'object') return found
+
+  if (Array.isArray(node)) {
+    for (const item of node) collectEvents(item, found)
+    return found
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const obj = node as Record<string, any>
+
+  // It's an event if it has eventId (number) and caption (string)
+  if (typeof obj.eventId === 'number' && typeof obj.caption === 'string') {
+    found.push(obj as NovibetEvent)
+    // Don't recurse deeper — markets are fetched separately
+    return found
+  }
+
+  // Otherwise recurse into every array/object value
+  for (const val of Object.values(obj)) {
+    if (val && typeof val === 'object') collectEvents(val, found)
+  }
+
+  return found
+}
+
+/**
+ * Extracts events from any response shape Novibet may return.
+ */
 function extractEvents(raw: unknown): NovibetEvent[] {
-  if (Array.isArray(raw)) {
-    // Direct array of events
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (raw as any[]).filter((e) => e.eventId || e.caption)
+  const all = collectEvents(raw)
+
+  // Filter to basketball events only (caption contains NBA team names or "NBA")
+  // Exclude events where caption looks like football (e.g. "Palmeiras", "Flamengo")
+  const basketballKeywords = [
+    ...Object.values(ABBR_TO_NOVIBET).flat().map(s => s.toUpperCase()),
+    'NBA', 'BASKETBALL', 'BASQUETE', 'RAPTORS', 'HEAT', 'CELTICS', 'LAKERS',
+    'WARRIORS', 'BULLS', 'KNICKS', 'NETS', 'HAWKS', 'HORNETS', 'CAVALIERS',
+    'MAVERICKS', 'NUGGETS', 'PISTONS', 'ROCKETS', 'PACERS', 'CLIPPERS',
+    'GRIZZLIES', 'BUCKS', 'TIMBERWOLVES', 'PELICANS', 'THUNDER', 'MAGIC',
+    'SIXERS', 'SUNS', 'BLAZERS', 'KINGS', 'SPURS', 'JAZZ', 'WIZARDS',
+  ]
+
+  const nbaEvents = all.filter((ev) => {
+    const cap = ev.caption.toUpperCase()
+    return basketballKeywords.some((k) => cap.includes(k))
+  })
+
+  console.log(`[Novibet] extractEvents: total=${all.length} nba=${nbaEvents.length}`)
+  if (all.length > 0 && nbaEvents.length === 0) {
+    // Log first few captions to help diagnose
+    console.log('[Novibet] Sample captions:', all.slice(0, 5).map(e => e.caption).join(' | '))
   }
 
-  if (typeof raw === 'object' && raw !== null) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const obj = raw as Record<string, any>
-
-    // Common nested shapes
-    if (Array.isArray(obj.events)) return obj.events
-    if (Array.isArray(obj.items)) return obj.items
-    if (Array.isArray(obj.data)) return obj.data
-    if (Array.isArray(obj.result)) return obj.result
-
-    // Maybe it's a single market object with betItems — not an event list
-    if (obj.betItems) {
-      console.warn('[Novibet] Got a single market, not an event list')
-      return []
-    }
-
-    // Log keys for debugging
-    console.log('[Novibet] Unknown competition response shape, keys:', Object.keys(obj).join(', '))
-  }
-
-  return []
+  return nbaEvents
 }
 
 // ─── Market fetching for a specific event ────────────────────────────────────
