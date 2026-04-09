@@ -32,29 +32,52 @@ export async function GET() {
     results.odds_api_error = String(e)
   }
 
-  // 2. Novibet direct — check competition listing endpoint
-  try {
-    const ts = Date.now()
-    // Try NBA competition ID (from browser URL) first, then popular page fallback
-    const novibetUrl = `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/6680136/?lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
-    const r = await fetch(novibetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
-        Accept: 'application/json, text/plain, */*',
-        'Accept-Language': 'pt-BR,pt;q=0.9',
-        Origin: 'https://www.novibet.bet.br',
-        Referer: 'https://www.novibet.bet.br/',
-      },
-      cache: 'no-store',
-    })
-    const text = await r.text()
-    results.novibet_direct_status = r.status
-    results.novibet_direct_content_type = r.headers.get('content-type')
-    results.novibet_direct_size_bytes = text.length
-    results.novibet_direct_preview = text.slice(0, 400)
-    results.novibet_direct_is_json = text.trim().startsWith('{') || text.trim().startsWith('[')
-  } catch (e) {
-    results.novibet_direct_error = String(e)
+  // 2. Novibet direct — analisa estrutura do JSON para encontrar eventos NBA
+  const HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
+    Accept: 'application/json, text/plain, */*',
+    'Accept-Language': 'pt-BR,pt;q=0.9',
+    Origin: 'https://www.novibet.bet.br',
+    Referer: 'https://www.novibet.bet.br/',
+  }
+
+  // Testa vários IDs possíveis
+  const novibetIds = [6051394, 6680136, 4795953]
+  for (const id of novibetIds) {
+    try {
+      const ts = Date.now()
+      const url = `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/${id}/?lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
+      const r = await fetch(url, { headers: HEADERS, cache: 'no-store' })
+      const text = await r.text()
+      const key = `novibet_${id}`
+      results[`${key}_status`] = r.status
+      results[`${key}_bytes`] = text.length
+      results[`${key}_preview`] = text.slice(0, 600)
+
+      // Se tiver dados, mostrar as chaves do primeiro elemento
+      if (text.length > 10 && (text.startsWith('[') || text.startsWith('{'))) {
+        try {
+          const parsed = JSON.parse(text)
+          const first = Array.isArray(parsed) ? parsed[0] : parsed
+          if (first && typeof first === 'object') {
+            results[`${key}_top_keys`] = Object.keys(first)
+            // Se tiver betViews, mostrar as chaves do primeiro betView
+            if (Array.isArray(first.betViews) && first.betViews[0]) {
+              results[`${key}_betViews_keys`] = Object.keys(first.betViews[0])
+              const bv0 = first.betViews[0]
+              // Ver se tem items/events dentro do betView
+              for (const k of Object.keys(bv0)) {
+                if (Array.isArray(bv0[k]) && bv0[k].length > 0) {
+                  results[`${key}_betViews[0].${k}[0]_keys`] = Object.keys(bv0[k][0] ?? {})
+                }
+              }
+            }
+          }
+        } catch { /* ignore parse errors */ }
+      }
+    } catch (e) {
+      results[`novibet_${id}_error`] = String(e)
+    }
   }
 
   return NextResponse.json(results)
