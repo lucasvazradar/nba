@@ -213,9 +213,11 @@ function generateSyntheticAlternateLines(
   mainOverOdd: number,
   mainUnderOdd: number
 ): AlternateTotalLine[] {
-  // NBA typical odds sensitivity per 1-point line movement (observed from Novibet)
-  const OVER_DELTA_PER_PT  = 0.073
-  const UNDER_DELTA_PER_PT = 0.053
+  // Calibrated from real Novibet data (TOR@MIA, Apr 2026, main=236.5):
+  // OVER 225.5→1.33 (+11pts below): (1.88-1.33)/11 = 0.050/pt
+  // UNDER 246.5→1.35 (+10pts above): (1.89-1.35)/10 = 0.054/pt
+  const OVER_DELTA_PER_PT  = 0.050
+  const UNDER_DELTA_PER_PT = 0.054
 
   const candidates: AlternateTotalLine[] = []
 
