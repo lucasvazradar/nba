@@ -27,11 +27,10 @@ export async function GET(req: Request) {
     if (isNaN(numericId)) {
       return NextResponse.json({ error: 'event_id must be numeric (e.g. 44453955)' }, { status: 400 })
     }
-    const markets = await getNovibetMarkets(numericId)
+    await getNovibetMarkets(numericId)
     return NextResponse.json({
       event_id: numericId,
-      markets_count: markets?.length ?? 0,
-      markets: markets ?? 'null (fetch failed)',
+      note: 'Mercados já vêm embutidos no listing. Use /api/novibet?matchup=TOR-MIA para ver as odds.',
     })
   }
 
