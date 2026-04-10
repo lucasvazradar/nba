@@ -3,8 +3,8 @@ import type { OddsData, PlayerPropOdd, AlternateTotalLine } from '@/types'
 const BASE_URL = 'https://api.the-odds-api.com/v4'
 const API_KEY = process.env.ODDS_API_KEY!
 
-export const ODD_MIN = 1.33
-export const ODD_MAX = 1.75
+export const ODD_MIN = 1.30
+export const ODD_MAX = 2.10
 
 const TEAM_NAME_TO_ABBR: Record<string, string> = {
   'Atlanta Hawks': 'ATL', 'Boston Celtics': 'BOS', 'Brooklyn Nets': 'BKN',
