@@ -94,8 +94,8 @@ function extractOddsData(bookmakers: any[]): OddsData {
 
 // Retorna mapa com TODAS as odds disponíveis indexadas por "AWAY-HOME"
 export async function getAllOddsByMatchup(fresh = false): Promise<Map<string, OddsData>> {
-  // Include alternate_totals — gracefully ignored if not on plan
-  const markets = 'h2h,totals,spreads,alternate_totals'
+  // alternate_totals não está disponível no plano gratuito — removido para não quebrar o request
+  const markets = 'h2h,totals,spreads'
   // us,eu,uk,au — cast wide net; Pinnacle/FanDuel always have NBA (us region)
   const url = `${BASE_URL}/sports/basketball_nba/odds?apiKey=${API_KEY}&regions=us,eu,uk,au&markets=${markets}`
   // fresh=true (called from /api/analyze) bypasses cache for real-time odds
