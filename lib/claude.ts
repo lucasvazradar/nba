@@ -126,6 +126,7 @@ export async function claudeAnalyze(payload: GameAnalysisPayload): Promise<BetOp
   })
 
   const text = response.content[0].type === 'text' ? response.content[0].text : ''
+  console.log(`[Claude] Raw response for ${payload.game.away_team}@${payload.game.home_team}:`, text.slice(0, 800))
 
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
@@ -141,9 +142,12 @@ export async function claudeAnalyze(payload: GameAnalysisPayload): Promise<BetOp
     return []
   }
 
-  return (parsed.opportunities ?? []).map((o) => ({
+  const raw = (parsed.opportunities ?? []).map((o) => ({
     ...o,
     game_id: payload.game.id,
     method: (o as any).methods_used ?? [],
   })) as BetOpportunity[]
+
+  console.log(`[Claude] ${payload.game.away_team}@${payload.game.home_team} — raw opportunities: ${raw.length}`, raw.map(o => `${o.market} odd=${o.novibet_odd} prob=${o.estimated_probability} ev=${o.expected_value}`))
+  return raw
 }
