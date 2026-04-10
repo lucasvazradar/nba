@@ -26,22 +26,73 @@ export async function GET(req: Request) {
     getAllOddsByMatchup(true),
   ])
 
-  const opportunities = await analyzeGame(game, { injuries, projections, allPlayerStats, oddsMap })
-
   if (debug) {
     const matchupKey = `${game.away_team}-${game.home_team}`
     const odds = oddsMap.get(matchupKey)
+
+    // Chama Claude diretamente para ver resposta bruta
+    let claudeRaw = ''
+    let analyzeError = ''
+    let opportunities: BetOpportunity[] = []
+
+    try {
+      opportunities = await analyzeGame(game, { injuries, projections, allPlayerStats, oddsMap })
+      claudeRaw = lastClaudeRawResponse
+    } catch (e) {
+      analyzeError = String(e)
+    }
+
+    // Se Claude não foi chamado, tenta chamar direto com payload mínimo
+    if (!claudeRaw && !analyzeError) {
+      const { claudeAnalyze } = await import('@/lib/claude')
+      const { calculateTeamMetrics } = await import('@/lib/analyzer')
+      const { getLast10Games } = await import('@/lib/sportsdata')
+      const [homeHist, awayHist] = await Promise.all([
+        getLast10Games(game.home_team_id),
+        getLast10Games(game.away_team_id),
+      ])
+      try {
+        const minimalPayload = {
+          game: { ...game, odds_data: odds },
+          home_metrics: calculateTeamMetrics(homeHist, [], game.home_team_id, odds?.total?.line ?? 220),
+          away_metrics: calculateTeamMetrics(awayHist, [], game.away_team_id, odds?.total?.line ?? 220),
+          player_metrics: [],
+          injuries: [],
+          odds: odds ?? {},
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await claudeAnalyze(minimalPayload as any)
+        claudeRaw = lastClaudeRawResponse
+        return NextResponse.json({
+          game: matchupKey,
+          odds,
+          home_games: homeHist.length,
+          away_games: awayHist.length,
+          claude_called: true,
+          claude_raw: claudeRaw.slice(0, 3000),
+          claude_parsed_count: result.length,
+          claude_parsed: result,
+          final_opportunities: opportunities.length,
+        })
+      } catch (e2) {
+        analyzeError = `analyzeGame ok but direct claude failed: ${e2}`
+      }
+    }
+
     return NextResponse.json({
-      game: `${game.away_team}@${game.home_team}`,
+      game: matchupKey,
       odds_found: !!odds,
       odds,
+      home_games: (await import('@/lib/sportsdata').then(m => m.getLast10Games(game.home_team_id))).length,
+      analyze_error: analyzeError || null,
+      claude_was_called: !!claudeRaw,
+      claude_raw: claudeRaw.slice(0, 3000),
       opportunities_count: opportunities.length,
       opportunities,
-      claude_payload_summary: JSON.parse(lastClaudePayloadSummary || '{}'),
-      claude_raw_response: lastClaudeRawResponse.slice(0, 2000),
     })
   }
 
+  const opportunities = await analyzeGame(game, { injuries, projections, allPlayerStats, oddsMap })
   return NextResponse.json(opportunities)
 }
 
