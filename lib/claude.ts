@@ -114,6 +114,10 @@ confidence_level — baseado APENAS em EV (não em probabilidade bruta):
 • MODERATE  → EV > 0%
 `.trim()
 
+// Expõe a última resposta bruta do Claude para diagnóstico
+export let lastClaudeRawResponse = ''
+export let lastClaudePayloadSummary = ''
+
 export async function claudeAnalyze(payload: GameAnalysisPayload): Promise<BetOpportunity[]> {
   const userMessage = JSON.stringify(payload, null, 2)
 
@@ -126,6 +130,14 @@ export async function claudeAnalyze(payload: GameAnalysisPayload): Promise<BetOp
   })
 
   const text = response.content[0].type === 'text' ? response.content[0].text : ''
+  lastClaudeRawResponse = text
+  lastClaudePayloadSummary = JSON.stringify({
+    game: `${payload.game.away_team}@${payload.game.home_team}`,
+    odds: payload.odds,
+    home_metrics: { avgScored: payload.home_metrics?.avgPointsScored, avgAllowed: payload.home_metrics?.avgPointsAllowed },
+    away_metrics: { avgScored: payload.away_metrics?.avgPointsScored, avgAllowed: payload.away_metrics?.avgPointsAllowed },
+    alt_totals_count: payload.odds?.alternate_totals?.length ?? 0,
+  })
   console.log(`[Claude] Raw response for ${payload.game.away_team}@${payload.game.home_team}:`, text.slice(0, 800))
 
   const jsonMatch = text.match(/\{[\s\S]*\}/)

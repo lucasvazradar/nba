@@ -4,6 +4,7 @@ import { analyzeAllGames, analyzeGame } from '@/lib/analyzer'
 import { getAllOddsByMatchup } from '@/lib/oddsapi'
 import { getInjuries, getPlayerProjections, getPlayerStatsByDate } from '@/lib/sportsdata'
 import { createServerClient } from '@/lib/supabase'
+import { lastClaudeRawResponse, lastClaudePayloadSummary } from '@/lib/claude'
 import type { BetOpportunity } from '@/types'
 
 export async function GET(req: Request) {
@@ -36,6 +37,8 @@ export async function GET(req: Request) {
       odds,
       opportunities_count: opportunities.length,
       opportunities,
+      claude_payload_summary: JSON.parse(lastClaudePayloadSummary || '{}'),
+      claude_raw_response: lastClaudeRawResponse.slice(0, 2000),
     })
   }
 
