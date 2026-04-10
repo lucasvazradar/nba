@@ -108,14 +108,21 @@ export async function GET(req: Request) {
     const ts = Date.now()
     const qs = `lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
     const endpoints = [
-      // popular (jogos ao vivo / prestes a começar)
+      // popular (ao vivo / prestes a começar)
       `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/6051394/?${qs}`,
-      // tentativas para jogos agendados
-      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/6680136/?${qs}`,
-      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/6680136/?${qs}`,
-      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4795953/6680136/?${qs}`,
-      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4795953/?${qs}`,
-      `https://www.novibet.bet.br/spt/feed/prematch/location/6680136/?${qs}`,
+      // variações de category path com o ID da NBA
+      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4323/6680136/?${qs}`,
+      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4325/6680136/?${qs}`,
+      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4326/6680136/?${qs}`,
+      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4327/6680136/?${qs}`,
+      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4328/6680136/?${qs}`,
+      // sem category path
+      `https://www.novibet.bet.br/spt/feed/marketviews/competition/6680136/?${qs}`,
+      `https://www.novibet.bet.br/spt/feed/marketviews/competition/v2/6680136/?${qs}`,
+      // betcontext direto
+      `https://www.novibet.bet.br/spt/feed/betcontext/6680136/?${qs}`,
+      // upcoming
+      `https://www.novibet.bet.br/spt/feed/upcoming/6680136/?${qs}`,
     ]
 
     const diag: Record<string, unknown> = {}
