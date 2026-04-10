@@ -104,26 +104,46 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
 
   if (searchParams.get('raw')) {
-    // diagnóstico bruto — mostra estrutura da resposta Novibet
+    // Testa múltiplos endpoints para encontrar jogos NBA agendados
     const ts = Date.now()
-    const url = `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/6051394/?lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
-    const res = await fetch(url, { headers: NV_HEADERS, cache: 'no-store' })
-    const text = await res.text()
-    const parsed = JSON.parse(text)
-    const pages = Array.isArray(parsed) ? parsed : [parsed]
-    const diag: Record<string, unknown> = { status: res.status, bytes: text.length, pages: pages.length }
-    for (const page of pages) {
-      for (const bv of (page?.betViews ?? [])) {
-        const ctx: string = bv?.competitionContextCaption ?? '?'
-        const isB = ctx.toUpperCase().includes('BASQUET') || ctx.toUpperCase().includes('BASKET')
-        diag[`bv_${ctx}`] = { isBasket: isB, comps: (bv?.competitions ?? []).map((c: any) => c?.caption) }
-        if (isB) {
-          for (const comp of (bv?.competitions ?? [])) {
-            const evts = comp?.events ?? []
-            diag[`NBA_${comp?.caption}_count`] = evts.length
-            if (evts[0]) diag[`NBA_${comp?.caption}_ev0`] = { id: evts[0].betContextId, ac: evts[0].additionalCaptions, markets: evts[0].markets?.map((m: any) => m.betTypeSysname) }
-          }
+    const qs = `lang=pt-BR&timeZ=E.%20South%20America%20Standard%20Time&oddsR=1&usrGrp=BR&timestamp=${ts}&filterAlias=`
+    const endpoints = [
+      // popular (jogos ao vivo / prestes a começar)
+      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/6051394/?${qs}`,
+      // tentativas para jogos agendados
+      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4324/6680136/?${qs}`,
+      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/6680136/?${qs}`,
+      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4795953/6680136/?${qs}`,
+      `https://www.novibet.bet.br/spt/feed/marketviews/location/v2/4795953/?${qs}`,
+      `https://www.novibet.bet.br/spt/feed/prematch/location/6680136/?${qs}`,
+    ]
+
+    const diag: Record<string, unknown> = {}
+    for (const url of endpoints) {
+      const key = url.replace('https://www.novibet.bet.br/spt/feed/', '').split('?')[0]
+      try {
+        const res = await fetch(url, { headers: NV_HEADERS, cache: 'no-store' })
+        const text = await res.text()
+        const isJson = text.trim().startsWith('[') || text.trim().startsWith('{')
+        diag[key] = {
+          status: res.status,
+          bytes: text.length,
+          isJson,
+          preview: text.slice(0, 200),
         }
+        if (isJson && text.length > 10) {
+          const parsed = JSON.parse(text)
+          const pages = Array.isArray(parsed) ? parsed : [parsed]
+          const sports: string[] = []
+          for (const page of pages) {
+            for (const bv of (page?.betViews ?? [])) {
+              sports.push(`${bv?.competitionContextCaption}(${(bv?.competitions ?? []).map((c: any) => c?.caption).join(',')})`)
+            }
+          }
+          if (sports.length) (diag[key] as any).sports = sports
+        }
+      } catch (e) {
+        diag[key] = { error: String(e) }
       }
     }
     return NextResponse.json(diag)
