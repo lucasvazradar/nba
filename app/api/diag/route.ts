@@ -34,7 +34,29 @@ export async function GET() {
       date: g.game_date, scored: g.points_scored, allowed: g.points_allowed, total: g.total_points
     }))
 
-    // Odds
+    // Odds — diagnóstico detalhado
+    const OA_KEY = process.env.ODDS_API_KEY ?? ''
+    const oddsUrl = `https://api.the-odds-api.com/v4/sports/basketball_nba/odds?apiKey=${OA_KEY}&regions=us,eu,uk,au&markets=totals`
+    try {
+      const oddsRes = await fetch(oddsUrl, { cache: 'no-store' })
+      const oddsRaw = await oddsRes.json()
+      result.odds_api_raw_status = oddsRes.status
+      result.odds_api_remaining = oddsRes.headers.get('x-requests-remaining')
+      if (Array.isArray(oddsRaw)) {
+        result.odds_api_events_count = oddsRaw.length
+        // Mostra os nomes de times retornados pela API
+        result.odds_api_team_names = oddsRaw.slice(0, 5).map((e: any) => ({
+          away: e.away_team,
+          home: e.home_team,
+          bookmakers_count: e.bookmakers?.length ?? 0,
+        }))
+      } else {
+        result.odds_api_error_body = JSON.stringify(oddsRaw).slice(0, 200)
+      }
+    } catch (e) {
+      result.odds_api_fetch_error = String(e)
+    }
+
     const oddsMap = await getAllOddsByMatchup(true)
     result.odds_map_size = oddsMap.size
     result.odds_map_keys = Array.from(oddsMap.keys())
