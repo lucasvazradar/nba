@@ -6,6 +6,42 @@ import { getInjuries, getPlayerProjections, getPlayerStatsByDate } from '@/lib/s
 import { createServerClient } from '@/lib/supabase'
 import type { BetOpportunity } from '@/types'
 
+export async function GET(req: Request) {
+  // GET /api/analyze?game_id=23597&debug=1 — diagnóstico sem salvar no Supabase
+  const { searchParams } = new URL(req.url)
+  const game_id = searchParams.get('game_id')
+  const debug = searchParams.get('debug') === '1'
+  if (!game_id) return NextResponse.json({ error: 'Passe ?game_id=23597' }, { status: 400 })
+
+  const today = new Date().toISOString().split('T')[0]
+  const games = await getGamesByDate(today)
+  const game = games.find((g) => g.id === game_id)
+  if (!game) return NextResponse.json({ error: 'Jogo não encontrado' }, { status: 404 })
+
+  const [injuries, projections, allPlayerStats, oddsMap] = await Promise.all([
+    getInjuries(),
+    getPlayerProjections(today),
+    getPlayerStatsByDate(today),
+    getAllOddsByMatchup(true),
+  ])
+
+  const opportunities = await analyzeGame(game, { injuries, projections, allPlayerStats, oddsMap })
+
+  if (debug) {
+    const matchupKey = `${game.away_team}-${game.home_team}`
+    const odds = oddsMap.get(matchupKey)
+    return NextResponse.json({
+      game: `${game.away_team}@${game.home_team}`,
+      odds_found: !!odds,
+      odds,
+      opportunities_count: opportunities.length,
+      opportunities,
+    })
+  }
+
+  return NextResponse.json(opportunities)
+}
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const { game_id, date } = body as { game_id?: string; date?: string }
