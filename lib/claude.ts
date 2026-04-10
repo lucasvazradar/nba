@@ -107,11 +107,11 @@ ATENÇÃO no campo "market":
   ]
 }
 
-confidence_level:
-• EXTREME  → EV ≥ 15% e prob ≥ 70%
-• VERY_HIGH → EV ≥ 10% e prob ≥ 65%
-• HIGH      → EV ≥ 5% e prob ≥ 60%
-• MODERATE  → EV > 0% e prob ≥ 57%
+confidence_level — baseado APENAS em EV (não em probabilidade bruta):
+• EXTREME  → EV ≥ 12%
+• VERY_HIGH → EV ≥ 8%
+• HIGH      → EV ≥ 4%
+• MODERATE  → EV > 0%
 `.trim()
 
 export async function claudeAnalyze(payload: GameAnalysisPayload): Promise<BetOpportunity[]> {

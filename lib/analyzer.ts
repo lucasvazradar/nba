@@ -493,7 +493,8 @@ export async function analyzeGame(
   // Apply full post-processing pipeline
   const processed = postProcess(raw, bookmakerSource)
   console.log(`[analyzer] ${game.away_team}@${game.home_team} — after postProcess: ${processed.length} opportunities`)
-  return processed
+  // Filtro mínimo: prob >= 0.57 (compatível com faixa de odds 1.33–1.75) e EV > 0
+  return processed.filter((o) => o.estimated_probability >= 0.57 && (o.expected_value ?? 0) > 0)
 }
 
 // ─── Analisa todos os jogos do dia (compartilhando dados) ─────────────────────
